@@ -1,0 +1,6 @@
+DATETIME_MODULE = "import datetime"
+DATACLASS = "from dataclasses import dataclass"
+TYPING = "import typing"
+DECIMAL = "from decimal import Decimal"
+UUID = "from uuid import UUID"
+UNION = "from typing import Union"
