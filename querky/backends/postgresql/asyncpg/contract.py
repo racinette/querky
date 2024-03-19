@@ -73,7 +73,15 @@ class AsyncpgContract(PostgresqlContract):
 
         attributes = tuple(
             [
-                ResultAttribute(index, attrib.name, await self.type_mapper.get_type_knowledge(self, db, attrib.type.oid))
+                ResultAttribute(
+                    index,
+                    attrib.name,
+                    await self.type_mapper.get_type_knowledge(
+                        self,
+                        db,
+                        attrib.type.oid
+                    )
+                )
                 for attrib, index in zip(raw_attributes, range(len(raw_attributes)))
             ]
         )

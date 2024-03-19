@@ -5,7 +5,11 @@ from querky import Querky, Query
 from querky.annotation_generators import ClassicAnnotationGenerator
 from querky.backends.postgresql.asyncpg import AsyncpgContract
 from querky.backends.postgresql.asyncpg.name_type_mapper import AsyncpgNameTypeMapper
-from querky.type_constructors import DataclassConstructor, TypedDictConstructor
+from querky.type_constructors import (
+    DataclassConstructor,
+    TypedDictConstructor,
+    NamedTupleTypeConstructor
+)
 from querky.type_constructor import TypeConstructor
 
 
@@ -13,7 +17,8 @@ TypeFactoryPreset = typing.Literal[
     'typed_dict',
     'fake_dict',
     'dataclass',
-    'dataclass+slots'
+    'dataclass+slots',
+    'namedtuple'
 ]
 
 
@@ -24,7 +29,9 @@ def use_preset(
         new_style_typehints: bool = True,
         **kwargs
 ):
-    annotation_generator = ClassicAnnotationGenerator(new_style_typehints=new_style_typehints)
+    annotation_generator = ClassicAnnotationGenerator(
+        new_style_typehints=new_style_typehints
+    )
 
     type_mapper = AsyncpgNameTypeMapper()
     contract = AsyncpgContract(type_mapper=type_mapper)
@@ -64,6 +71,17 @@ def use_preset(
                     row_factory = None
 
                 return TypedDictConstructor(query, typename, row_factory)
+
+        elif type_factory == 'namedtuple':
+            def type_factory(query: Query, typename: str) -> TypeConstructor:
+                def row_factory(record) -> typing.NamedTuple:
+                    return query.bound_type._make(record)
+
+                return NamedTupleTypeConstructor(
+                    query,
+                    typename,
+                    row_factory=row_factory,
+                )
 
         else:
             raise NotImplementedError(type_factory)

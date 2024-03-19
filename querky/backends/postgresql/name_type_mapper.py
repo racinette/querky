@@ -4,12 +4,12 @@ from querky.backends.postgresql.type_mapper import PostgresqlTypeMapper
 
 
 GET_PG_TYPE_SQL_QUERY = """
-SELECT 
-    oid::regtype::TEXT AS type_string, 
+SELECT
+    oid::regtype::TEXT AS type_string,
     typnamespace::regnamespace::TEXT AS namespace_string
-FROM   
+FROM
     pg_type
-WHERE  
+WHERE
     oid = $1
 """
 
