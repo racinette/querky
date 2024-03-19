@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from abc import ABC, abstractmethod
 
 from querky.base_types import ResultAttribute
 from querky.mixins import GetImportsMixin
@@ -13,7 +14,7 @@ if typing.TYPE_CHECKING:
 T = typing.TypeVar('T')
 
 
-class TypeConstructor(typing.Generic[T], GetImportsMixin):
+class TypeConstructor(ABC, typing.Generic[T], GetImportsMixin):
     def __init__(
             self,
             query: Query,
@@ -45,3 +46,7 @@ class TypeConstructor(typing.Generic[T], GetImportsMixin):
 
     def indent(self, i: int) -> str:
         return self.shape.query.querky.get_indent(i)
+
+    @abstractmethod
+    def generate_type_code(self) -> typing.Sequence[str] | None:
+        ...
