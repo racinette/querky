@@ -7,9 +7,18 @@ from types import ModuleType
 import inspect
 from os import path
 import os
-import logging
 
-from querky.result_shape import one_, all_, value_, status_, column_, One, All, ResultShape
+from querky.result_shape import (
+    one_,
+    many_,
+    value_,
+    status_,
+    column_,
+    One,
+    Many,
+    ResultShape,
+)
+from querky.query_param import QueryParam
 from querky.conn_param_config import ConnParamConfig, First
 from querky.annotation_generator import AnnotationGenerator
 from querky.type_constructor import TypeConstructor
@@ -17,35 +26,32 @@ from querky.module_constructor import ModuleConstructor
 from querky.base_types import TypeMetaData
 from querky.query import Query
 from querky.contract import Contract
-
-
-logger = logging.getLogger("querky")
-
-
-def to_camel_case(snake_str):
-    return "".join(x.capitalize() for x in snake_str.lower().split("_"))
-
-
-ShapeStringRepr = typing.Literal["one", "many", "column", "value", "status"]
-
-
-QueryDef = typing.Callable[[typing.Callable[[...], str]], Query]
+from querky.logger import logger
+from querky.annotated import Return, Param
+from querky.typing_hints import QueryDef
+from querky.helpers import to_camel_case
 
 
 class Querky:
     def __init__(
-            self,
-            basedir: str | None = None,
-            annotation_generator: AnnotationGenerator | None = None,
-            contract: Contract | None = None,
-            conn_param_config: ConnParamConfig | None = None,
-            type_factory: typing.Callable[[Query, str], TypeConstructor] | None = None,
-            subdir: str | None = "queries",
-            on_before_func_code_emit: typing.Optional[typing.Callable[[typing.List[str], Query], typing.List[str]]] = None,
-            on_before_type_code_emit: typing.Optional[typing.Callable[[typing.List[str], Query], typing.List[str]]] = None,
-            imports: typing.Optional[typing.Set[str]] = None,
-            indent: str = '    ',
-            query_class: typing.Type[Query] = Query
+        self,
+        basedir: str | None = None,
+        annotation_generator: AnnotationGenerator | None = None,
+        contract: Contract | None = None,
+        conn_param_config: ConnParamConfig | None = None,
+        type_factory: (
+            typing.Callable[[Query, str], TypeConstructor] | None
+        ) = None,
+        subdir: str | None = "queries",
+        on_before_func_code_emit: typing.Optional[
+            typing.Callable[[typing.List[str], Query], typing.List[str]]
+        ] = None,
+        on_before_type_code_emit: typing.Optional[
+            typing.Callable[[typing.List[str], Query], typing.List[str]]
+        ] = None,
+        imports: typing.Optional[typing.Set[str]] = None,
+        indent: str = "    ",
+        query_class: typing.Type[Query] = Query,
     ):
         self.basedir = basedir
 
@@ -62,7 +68,7 @@ class Querky:
         self.type_factory = type_factory
 
         if conn_param_config is None:
-            conn_param_config = First(name='__conn', positional=True)
+            conn_param_config = First(name="__conn", positional=True)
 
         self.conn_param_config = conn_param_config
 
@@ -77,57 +83,77 @@ class Querky:
     def get_indent(self, i: int):
         return self.indent * i
 
-    def create_query(
-            self,
-            fn: typing.Callable[[...], str],
-            shape: typing.Callable[[Query], ResultShape],
-            conn_param_config: ConnParamConfig | None,
-            explicit_name: str | None,
-            parent_query: typing.Optional[Query],
-            kwargs: typing.Optional[typing.Dict[str, typing.Any]]
-    ) -> Query:
-        module = inspect.getmodule(fn)
+    def query(self, query_def: QueryDef) -> Query:
+        annotations = typing.get_type_hints(query_def)
+        return_annotation = annotations.pop("return", None)
+        if return_annotation is not None and (
+            metadata_tuple := getattr(return_annotation, "__metadata__")
+        ):
+            return_metadata = metadata_tuple[0]
+            if not isinstance(return_metadata, Return):
+                raise ValueError(
+                    "Metadata for return annotation "
+                    f"must be an instance of {Return}, "
+                    f"it is {type(return_metadata)}"
+                )
+        else:
+            return_metadata = None
+
+        arg_annotations = annotations
+        args_metadata: dict[str, Param] = dict()
+
+        for arg_name, arg_hint in arg_annotations.items():
+            if metadata_tuple := getattr(arg_hint, "__metadata__"):
+                arg_metadata = metadata_tuple[0]
+                if not isinstance(arg_metadata, Param):
+                    raise ValueError(
+                        f"{arg_name}: Metadata for query parameter "
+                        f"must be an instance of {Param}, "
+                        f"but you provided: {type(arg_metadata)}"
+                    )
+                args_metadata[arg_name] = arg_metadata
+
+        module = inspect.getmodule(query_def)
+        assert module is not None, "no module object found for query function"
         if module in self.module_ctors:
             module_ctor = self.module_ctors[module]
         else:
             filename = self.generate_filename(module)
             if not str.isidentifier(filename):
-                raise ValueError(f"Generated a filename which is not a valid python identifier: {filename}")
+                raise ValueError(
+                    "Generated a filename which "
+                    f"is not a valid python identifier: {filename}"
+                )
 
-            filedir = path.dirname(module.__file__)
-            new_module_name = module.__name__.rsplit('.', maxsplit=1)[0]
+            module_filename = module.__file__
+            assert module_filename is not None, "module has not file name"
+            filedir = path.dirname(module_filename)
+            new_module_name = module.__name__.rsplit(".", maxsplit=1)[0]
 
             if self.subdir:
                 filedir = path.join(filedir, self.subdir)
                 new_module_name = f"{new_module_name}.{self.subdir}"
 
-            fullpath = path.join(filedir, f'{filename}.py')
+            fullpath = path.join(filedir, f"{filename}.py")
             new_module_name = f"{new_module_name}.{filename}"
 
-            module_ctor = ModuleConstructor(self, module, fullpath, new_module_name, filedir)
+            module_ctor = ModuleConstructor(
+                self, module, fullpath, new_module_name, filedir
+            )
             self.module_ctors[module] = module_ctor
-        return self.query_class(
-            fn,
-            shape,
+
+        query = Query(
+            query_def,
             module_ctor,
-            self.conn_param_config or conn_param_config,
-            explicit_name,
-            parent_query,
-            kwargs
         )
 
-    def query(
-            self,
-            arg: str | TypeMetaData | Query | typing.Callable[[...], str] | None = None,
-            *,
-            shape: ShapeStringRepr = 'status',
-            optional: bool | None = None,
-            **kwargs
-    ) -> QueryDef | Query:
-        def wrapper(fn: typing.Callable[[...], str]) -> Query:
-            nonlocal optional
+        query.set_shape(shape)
 
-            if shape in ['many', 'one']:
+        return query
+
+        def wrapper(fn: QueryDef) -> Query:
+
+            if shape in ["many", "one"]:
                 if isinstance(arg, TypeMetaData):
                     raise ValueError(
                         "TypeMetaData is not supported for `many` or `one` constructors. "
@@ -142,30 +168,32 @@ class Querky:
                         type_name = arg
 
                     if not type_name.isidentifier():
-                        raise ValueError(f"Name type should be a valid python identifier. You provided: {type_name}")
+                        raise ValueError(
+                            f"Name type should be a valid python identifier. You provided: {type_name}"
+                        )
                 else:
                     type_name = None
 
                 type_name: str | None
 
-                if shape == 'many':
+                if shape == "many":
                     if optional is not None:
                         raise TypeError(
-                            'ALL constructor does not accept `optional` flag -- '
-                            'at least an empty set will always be returned'
+                            "ALL constructor does not accept `optional` flag -- "
+                            "at least an empty set will always be returned"
                         )
                     created_shape = all_(type_name)
                 else:
                     if optional is None:
                         optional = True
                     created_shape = one_(type_name, optional=optional)
-            elif shape in ['value', 'column']:
+            elif shape in ["value", "column"]:
                 if arg is None:
                     annotation = None
                 else:
                     annotation = arg
 
-                if shape == 'value':
+                if shape == "value":
                     if optional is None:
                         optional = True
                     created_shape = value_(annotation, optional=optional)
@@ -173,7 +201,7 @@ class Querky:
                     if optional is None:
                         optional = False
                     created_shape = column_(annotation, elem_optional=optional)
-            elif shape == 'status':
+            elif shape == "status":
                 if optional is not None:
                     raise TypeError(
                         "STATUS constructor does not accept `optional` flag -- "
@@ -187,15 +215,6 @@ class Querky:
                 created_shape = status_()
             else:
                 raise NotImplementedError(shape)
-
-            return self.create_query(
-                fn,
-                created_shape,
-                self.conn_param_config,
-                None,
-                arg if isinstance(arg, Query) else None,
-                kwargs
-            )
 
         if callable(arg) and not isinstance(arg, Query):
             func = arg
@@ -220,14 +239,14 @@ class Querky:
 
     def generate_filename(self, module: ModuleType) -> str:
         filepath = module.__file__
-        filename = path.basename(filepath).split('.', 1)[0]
+        filename = path.basename(filepath).split(".", 1)[0]
         if not self.subdir:
             return f"{filename}_queries"
         else:
             return filename
 
     def check_file_is_mine(self, fullpath: str):
-        with open(fullpath, encoding='utf-8', mode='r') as f:
+        with open(fullpath, encoding="utf-8", mode="r") as f:
             first_line = f.readline().strip()
 
         if first_line != self.file_signature:
@@ -250,7 +269,7 @@ class Querky:
 
         directory = path.dirname(base_module.__file__)
         for filename in os.listdir(directory):
-            if filename.startswith('__') or not filename.endswith('.py'):
+            if filename.startswith("__") or not filename.endswith(".py"):
                 continue
 
             filepath = os.path.join(directory, filename)
@@ -259,18 +278,26 @@ class Querky:
 
             modulename = os.path.splitext(filename)[0]
 
-            module_import_path = f'{base_module.__name__}.{modulename}'
+            module_import_path = f"{base_module.__name__}.{modulename}"
             module = importlib.import_module(module_import_path)
             modules.append(module)
 
-    async def generate(self, db, base_modules: typing.Collection[types.ModuleType] | None = None):
+    async def generate(
+        self,
+        db,
+        base_modules: typing.Collection[types.ModuleType] | None = None,
+    ):
         if base_modules is not None:
             for base_module in base_modules:
                 self._pre_generate(base_module)
         for module_ctor in self.module_ctors.values():
             await module_ctor.generate_module(db)
 
-    def generate_sync(self, db, base_modules: typing.Collection[types.ModuleType] | None = None):
+    def generate_sync(
+        self,
+        db,
+        base_modules: typing.Collection[types.ModuleType] | None = None,
+    ):
         if base_modules is not None:
             for base_module in base_modules:
                 self._pre_generate(base_module)

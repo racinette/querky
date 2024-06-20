@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 import typing
-from inspect import Parameter
 import inspect
 from dataclasses import dataclass
 
-from querky.attr import Attr
+from querky.column import Column
 from querky.mixins import GetImportsMixin
 
 
@@ -25,7 +24,7 @@ class TypeMetaData(GetImportsMixin):
         module_path = t.__module__
         return TypeMetaData(
             counterpart=type_name,
-            required_imports={f"from {module_path} import {type_name}"}
+            required_imports={f"from {module_path} import {type_name}"},
         )
 
 
@@ -94,6 +93,10 @@ class ResultAttribute(GetImportsMixin):
 
 
 class QuerySignature:
-    def __init__(self, parameters: typing.Tuple[TypeKnowledge, ...], attributes: typing.Tuple[ResultAttribute, ...]):
+    def __init__(
+        self,
+        parameters: typing.Tuple[TypeKnowledge, ...],
+        attributes: typing.Tuple[ResultAttribute, ...],
+    ):
         self.parameters = parameters
         self.attributes = attributes

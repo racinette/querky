@@ -2,7 +2,7 @@ import typing
 from inspect import Parameter
 
 from querky.base_types import TypeKnowledge
-from querky.param_mapper import ParamMapper, MappedParam, M
+from querky.query_param import ParamMapper, MappedParam, M
 from querky.exceptions import QueryInitializationError
 
 
@@ -17,7 +17,7 @@ class DollarSignParamMapper(ParamMapper[DollarSignMappedParam]):
             raise QueryInitializationError(
                 self.query,
                 "Number of function signature parameters does not match "
-                f"the actual number of arguments inside the query: {len(t)} vs {len(self.params)}"
+                f"the actual number of arguments inside the query: {len(t)} vs {len(self.params)}",
             )
         for tk, param in zip(t, self.params):
             param: MappedParam
@@ -27,15 +27,12 @@ class DollarSignParamMapper(ParamMapper[DollarSignMappedParam]):
             except Exception as ex:
                 raise QueryInitializationError(
                     self.query,
-                    f"Setting type knowledge to `{param.name}` raised an unexpected exception."
+                    f"Setting type knowledge to `{param.name}` raised an unexpected exception.",
                 ) from ex
 
     def map_params(self, *args, **kwargs):
         bound = self.query.sig.bind(*args, **kwargs)
-        return [
-            bound.arguments[param.name]
-            for param in self.params
-        ]
+        return [bound.arguments[param.name] for param in self.params]
 
     def create_param(self, index: int, name: str, param: Parameter) -> M:
         return DollarSignMappedParam(self, index, name, param)

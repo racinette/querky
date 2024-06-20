@@ -4,30 +4,30 @@ import typing
 from querky import Querky, Query
 from querky.annotation_generators import ClassicAnnotationGenerator
 from querky.backends.postgresql.asyncpg import AsyncpgContract
-from querky.backends.postgresql.asyncpg.name_type_mapper import AsyncpgNameTypeMapper
+from querky.backends.postgresql.asyncpg.name_type_mapper import (
+    AsyncpgNameTypeMapper,
+)
 from querky.type_constructors import (
     DataclassConstructor,
     TypedDictConstructor,
-    NamedTupleTypeConstructor
+    NamedTupleTypeConstructor,
 )
 from querky.type_constructor import TypeConstructor
 
 
 TypeFactoryPreset = typing.Literal[
-    'typed_dict',
-    'fake_dict',
-    'dataclass',
-    'dataclass+slots',
-    'namedtuple'
+    "typed_dict", "fake_dict", "dataclass", "dataclass+slots", "namedtuple"
 ]
 
 
 def use_preset(
-        basedir: str,
-        *,
-        type_factory: TypeFactoryPreset | typing.Callable[[Query, str], TypeConstructor] = 'typed_dict',
-        new_style_typehints: bool = True,
-        **kwargs
+    basedir: str,
+    *,
+    type_factory: (
+        TypeFactoryPreset | typing.Callable[[Query, str], TypeConstructor]
+    ) = "typed_dict",
+    new_style_typehints: bool = True,
+    **kwargs,
 ):
     annotation_generator = ClassicAnnotationGenerator(
         new_style_typehints=new_style_typehints
@@ -37,20 +37,18 @@ def use_preset(
     contract = AsyncpgContract(type_mapper=type_mapper)
 
     if isinstance(type_factory, str):
-        if type_factory.startswith('dataclass'):
-            slots = type_factory.endswith('+slots')
+        if type_factory.startswith("dataclass"):
+            slots = type_factory.endswith("+slots")
 
             def type_factory(query: Query, typename: str) -> TypeConstructor:
                 def row_factory(record) -> typing.Any:
                     return query.bound_type(*tuple(record))
 
                 return DataclassConstructor(
-                    query,
-                    typename,
-                    row_factory=row_factory,
-                    slots=slots
+                    query, typename, row_factory=row_factory, slots=slots
                 )
-        elif type_factory == 'typed_dict':
+
+        elif type_factory == "typed_dict":
 
             def type_factory(query: Query, typename: str) -> TypeConstructor:
                 def row_factory(record) -> dict:
@@ -62,17 +60,18 @@ def use_preset(
                     row_factory=row_factory,
                 )
 
-        elif type_factory == 'fake_dict':
+        elif type_factory == "fake_dict":
 
             def type_factory(query: Query, typename: str) -> TypeConstructor:
-                if query.kwargs.get('dict', False):
+                if query.kwargs.get("dict", False):
                     row_factory = dict
                 else:
                     row_factory = None
 
                 return TypedDictConstructor(query, typename, row_factory)
 
-        elif type_factory == 'namedtuple':
+        elif type_factory == "namedtuple":
+
             def type_factory(query: Query, typename: str) -> TypeConstructor:
                 def row_factory(record) -> typing.NamedTuple:
                     return query.bound_type._make(record)
@@ -91,13 +90,18 @@ def use_preset(
         annotation_generator=annotation_generator,
         contract=contract,
         type_factory=type_factory,
-        **kwargs
+        **kwargs,
     )
 
     return qrk
 
 
-async def generate(qrk: Querky, *args, base_modules: tuple[types.ModuleType, ...] | None = None, **kwargs):
+async def generate(
+    qrk: Querky,
+    *args,
+    base_modules: tuple[types.ModuleType, ...] | None = None,
+    **kwargs,
+):
     import asyncpg
 
     conn = await asyncpg.connect(*args, **kwargs)
@@ -108,7 +112,4 @@ async def generate(qrk: Querky, *args, base_modules: tuple[types.ModuleType, ...
         await conn.close()
 
 
-__all__ = [
-    "use_preset",
-    "generate"
-]
+__all__ = ["use_preset", "generate"]

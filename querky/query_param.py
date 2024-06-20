@@ -11,11 +11,13 @@ if typing.TYPE_CHECKING:
     from querky.query import Query
 
 
-M = typing.TypeVar('M', bound='MappedParam')
+M = typing.TypeVar("M", bound="QueryParam")
 
 
-class MappedParam(ABC):
-    def __init__(self, mapper: ParamMapper, pos: int, name: str, param: Parameter):
+class QueryParam(ABC):
+    def __init__(
+        self, mapper: ParamMapper, pos: int, name: str, param: Parameter
+    ):
         self.mapper = mapper
         self.indices: list[int] = []
         self.pos = pos
@@ -42,11 +44,12 @@ class MappedParam(ABC):
             self.annotation_generator.annotate(tk, "param")
             self.type_knowledge = tk
         except Exception as ex:
-            raise QueryInitializationError(self.mapper.query, f"parameter `{self.name}`") from ex
+            raise QueryInitializationError(
+                self.mapper.query, f"parameter `{self.name}`"
+            ) from ex
 
     @abstractmethod
-    def placeholder(self, current_index: int) -> str:
-        ...
+    def placeholder(self, current_index: int) -> str: ...
 
     def __pos__(self):
         curr = self.mapper.count
@@ -55,7 +58,7 @@ class MappedParam(ABC):
         return self.placeholder(curr)
 
     def __str__(self) -> str:
-        return f'<{self.name}>'
+        return f"<{self.name}>"
 
 
 class ParamMapper(typing.Generic[M]):
@@ -67,13 +70,20 @@ class ParamMapper(typing.Generic[M]):
         self.keyword: typing.Dict[str, M] = dict()
         self.defaults: dict[str, typing.Any] = dict()
 
-        for index, (name, param) in zip(range(len(query.sig.parameters)), query.sig.parameters.items()):
+        for index, (name, param) in zip(
+            range(len(query.sig.parameters)), query.sig.parameters.items()
+        ):
             param: Parameter
             if param.kind in [Parameter.VAR_KEYWORD, Parameter.VAR_POSITIONAL]:
-                raise TypeError("Neither positional nor keyword varargs are supported")
+                raise TypeError(
+                    "Neither positional nor keyword varargs are supported"
+                )
             mapped_param = self.create_param(index, name, param)
             self.params.append(mapped_param)
-            if param.kind in [Parameter.POSITIONAL_ONLY, Parameter.POSITIONAL_OR_KEYWORD]:
+            if param.kind in [
+                Parameter.POSITIONAL_ONLY,
+                Parameter.POSITIONAL_OR_KEYWORD,
+            ]:
                 self.positional.append(mapped_param)
             elif param.kind == Parameter.KEYWORD_ONLY:
                 self.keyword[name] = mapped_param
@@ -95,18 +105,19 @@ class ParamMapper(typing.Generic[M]):
         for arg in self.positional:
             arr.append(arg.name)
         for kwarg in self.keyword.keys():
-            arr.append(f'{kwarg}={kwarg}')
+            arr.append(f"{kwarg}={kwarg}")
 
-        return ', '.join(arr)
+        return ", ".join(arr)
 
     def parametrize_query(self) -> str:
         sql = self.query.query(*self.positional, **self.keyword)
         return sql
 
     @abstractmethod
-    def map_params(self, *args, **kwargs):
-        ...
+    def map_params(self, *args, **kwargs): ...
 
     @abstractmethod
-    def create_param(self, index: int, name: str, param: Parameter) -> M:
-        ...
+    def create_param(self, index: int, name: str, param: Parameter) -> M: ...
+
+
+__all__ = ["ParamMapper", "QueryParam"]

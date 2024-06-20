@@ -1,4 +1,3 @@
-
 class ReprHelper:
     def __init__(self, name: str):
         self.name = name
@@ -15,7 +14,8 @@ class DictGetAttr:
         return self.__d[item]
 
 
-__all__ = [
-    "ReprHelper",
-    "DictGetAttr"
-]
+def to_camel_case(snake_str):
+    return "".join(x.capitalize() for x in snake_str.lower().split("_"))
+
+
+__all__ = ["ReprHelper", "DictGetAttr", "to_camel_case"]
