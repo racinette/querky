@@ -1,43 +1,9 @@
 import ast
-import typing
+
+from querky.inspector import CodeBlock, code_block_types
 
 
 DEFAULT_INDENT = "    "
-
-
-CodeBlock = (
-    ast.Module
-    | ast.For
-    | ast.If
-    | ast.AsyncFunctionDef
-    | ast.AsyncFor
-    | ast.AsyncWith
-    | ast.With
-    | ast.While
-    | ast.Try
-    | ast.TryStar
-    | ast.ExceptHandler
-    | ast.ClassDef
-)
-
-
-_code_block_types = (
-    ast.Module,
-    ast.For,
-    ast.If,
-    ast.AsyncFunctionDef,
-    ast.AsyncFor,
-    ast.AsyncWith,
-    ast.With,
-    ast.While,
-    ast.Try,
-    ast.TryStar,
-    ast.ExceptHandler,
-    ast.ClassDef,
-)
-
-
-assert _code_block_types == typing.get_args(CodeBlock)
 
 
 def _list_code_block_nodes(
@@ -45,7 +11,7 @@ def _list_code_block_nodes(
     parents: tuple[CodeBlock, ...],
     result: list[tuple[CodeBlock, ...]],
 ):
-    if not isinstance(node, _code_block_types):
+    if not isinstance(node, code_block_types):
         return
     new_parents = (*parents, node)
     result.append(new_parents)
@@ -89,14 +55,6 @@ def get_indent(
         return DEFAULT_INDENT
 
 
-def _get_node_indent_value(node: ast.AST, source_code_lines: list[str]):
-    lineno = getattr(node, "lineno") - 1
-    assert isinstance(lineno, int)
-    col_offset = getattr(node, "col_offset")
-    assert isinstance(col_offset, int)
-    return source_code_lines[lineno][:col_offset]
-
-
 def chunk_split(s: str, length: int):
     string_length = len(s)
     if string_length % length != 0:
@@ -113,13 +71,15 @@ def chunk_split(s: str, length: int):
 
 
 def get_indent_level(
-    node: ast.AST,
+    node: CodeBlock,
     source_code_lines: list[str],
     indent_value: str = DEFAULT_INDENT,
 ) -> int:
     if isinstance(node, ast.Module):
         return -1
-    curr_indent = _get_node_indent_value(node, source_code_lines)
+    lineno = node.lineno - 1
+    col_offset = node.col_offset
+    curr_indent = source_code_lines[lineno][:col_offset]
     if not curr_indent:
         return 0
     indents = chunk_split(curr_indent, len(indent_value))

@@ -1,6 +1,41 @@
-import functools
 import pathlib
 import ast
+import typing
+
+
+CodeBlock = (
+    ast.Module
+    | ast.For
+    | ast.If
+    | ast.AsyncFunctionDef
+    | ast.AsyncFor
+    | ast.AsyncWith
+    | ast.With
+    | ast.While
+    | ast.Try
+    | ast.TryStar
+    | ast.ExceptHandler
+    | ast.ClassDef
+)
+
+
+code_block_types = (
+    ast.Module,
+    ast.For,
+    ast.If,
+    ast.AsyncFunctionDef,
+    ast.AsyncFor,
+    ast.AsyncWith,
+    ast.With,
+    ast.While,
+    ast.Try,
+    ast.TryStar,
+    ast.ExceptHandler,
+    ast.ClassDef,
+)
+
+
+assert code_block_types == typing.get_args(CodeBlock)
 
 
 DEFAULT_ENCODING = "utf-8"
@@ -27,31 +62,25 @@ class ModuleInspector:
             def_start_lineno = fn.lineno - 1
 
         # находим конец
-        fn_end_lineno = fn.end_lineno
-        assert isinstance(fn_end_lineno, int)
+        fst = fn.body[0]
+        fst_lineno0 = fst.lineno - 1
 
-        fn_body_start_lineno = fn.body[0].lineno
-        fn_body_end_lineno = fn.body[-1].end_lineno
-        assert isinstance(fn_body_end_lineno, int)
-
-        if fn_body_start_lineno == fn_body_end_lineno == fn_end_lineno:
-            # конец сигнатуры, начало тела функции и ее конец
-            # уместились на той же самой строчке
-            fn_body_start_offset = fn.body[0].col_offset
+        if self.body_is_inline(fn):
+            col_offset = fst.col_offset
+            last_line = self.lines[fst_lineno0][:col_offset]
+            return ''.join([
+                *self.lines[def_start_lineno:fst_lineno0],
+                last_line
+            ]), (
+                def_start_lineno + 1,
+                fst.lineno,
+            )
         else:
-            fn_body_start_offset = 0
+            return ''.join(self.lines[def_start_lineno:fst_lineno0]), (
+                def_start_lineno + 1,
+                fst_lineno0
+            )
 
-        def_end_lineno = fn_body_start_lineno - 1
-        lines = self.lines[def_start_lineno:def_end_lineno]
-        last_line_index = len(lines) - 1
-        lines[last_line_index] = lines[last_line_index][:def_end_lineno]
-        header = "".join(lines)
-
-        return header, (
-            def_start_lineno + 1,
-            def_end_lineno + 1,
-            fn_body_start_offset,
-        )
 
     def _get_func_w_lineno_in_header(self, lineno0: int):
         return self._get_func_w_lineno_in_header_inner(
@@ -61,7 +90,7 @@ class ModuleInspector:
 
     def _get_func_w_lineno_in_header_inner(
         self, base: ast.AST, lineno0: int
-    ) -> tuple[ast.FunctionDef, str, tuple[int, int, int]]:
+    ) -> tuple[ast.FunctionDef, str, tuple[int, int]]:
         for node in ast.iter_child_nodes(base):
             try:
                 node_start_lineno: int = getattr(node, "lineno") - 1
@@ -74,7 +103,7 @@ class ModuleInspector:
                 if node_start_lineno <= lineno0 <= node_end_lineno:
                     if isinstance(node, ast.FunctionDef):
                         source_part, coordinates = self.get_func_header(node)
-                        fn_header_start_lineno, fn_header_end_lineno, _ = (
+                        fn_header_start_lineno, fn_header_end_lineno = (
                             coordinates
                         )
                         if (
@@ -88,7 +117,10 @@ class ModuleInspector:
                         node, lineno0
                     )
 
-        raise ValueError("function header not found")
+        raise ValueError(
+            "function header not found, last base:\n"
+            + ast.unparse(base)
+        )
 
     def get_return_annotation(self, lineno0: int):
         fn, func_def_source_part, coordinates = (
@@ -143,8 +175,8 @@ class ModuleInspector:
             f"{enumerate_lines(func_def_source_part, fn_def_start_lineno)}"
         )
 
-    def function_body_is_inline(self, fn: ast.FunctionDef):
-        return function_body_is_inline(fn, self.source_code, self.lines)
+    def body_is_inline(self, body_node: ast.stmt | CodeBlock):
+        return body_is_inline(body_node, self.source_code, self.lines)
 
 
 def enumerate_lines(s: str, start: int = 1):
@@ -199,14 +231,18 @@ def extract_hint(annotation: ast.expr | None):
             return keyword.value
 
 
-def function_body_is_inline(
-        fn: ast.FunctionDef,
+def body_is_inline(
+        body_node: ast.stmt | CodeBlock,
         source_code: str,
         lines: list[str]
 ):
-    target_line = fn.body[0].lineno - 1
+    try:
+        body: list[ast.stmt] = getattr(body_node, "body")
+    except AttributeError:
+        return False
+    target_line = body[0].lineno - 1
     raw_line = lines[target_line].strip()
-    segment = ast.get_source_segment(source_code, fn)
+    segment = ast.get_source_segment(source_code, body[0])
     assert segment is not None
     exact_line = segment.splitlines()[0].strip()
     return raw_line != exact_line

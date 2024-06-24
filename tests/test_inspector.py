@@ -7,7 +7,7 @@ import ast
 from querky.inspector import (
     extract_hint,
     ModuleInspector,
-    function_body_is_inline,
+    body_is_inline,
 )
 
 from tests.static_env import SOURCECODE_DIRECTORY
@@ -172,8 +172,8 @@ SIGNATURE_HINTS: dict[str, dict[str, ast.expr]] = {
 
 def _fill_signature(s: str) -> tuple[str, int]:
     tag = "####### HIDE'N'SEEK #######"
-    offset = 1
     lines = [tag, "@qrk.query"]
+    offset = len(lines)
     if random.random() > 0.5:
         count = random.randint(1, len(TEST_DECORATORS))
         decorators = [random.choice(TEST_DECORATORS) for _ in range(count)]
@@ -221,6 +221,10 @@ def test_hint_hide_n_seek():
             signature_hints = SIGNATURE_HINTS[signature]
             for node_path in body_nodes:
                 parent_node = node_path[-1]
+                if body_is_inline(parent_node, source_code, source_code_lines):
+                    # лучше не трогать инлайны, реально
+                    continue
+
                 indent_level = get_indent_level(parent_node, source_code_lines)
                 next_indent_level = indent_level + 1
                 next_indent = DEFAULT_INDENT * next_indent_level
@@ -229,43 +233,9 @@ def test_hint_hide_n_seek():
                     signature_variation, next_indent
                 )
                 target_node = random.choice(parent_node.body)
-                first_stmt = parent_node.body[0]
                 new_source_code_lines = [*source_code_lines]
 
                 insert_at_line = target_node.lineno - 1
-
-                # TODO:
-                if function_body_is_inline():
-                    statement_code = ast.get_source_segment(
-                        source_code, first_stmt
-                    )
-                    assert statement_code is not None
-                    start = first_stmt.lineno - 1
-                    end = first_stmt.end_lineno
-                    assert end is not None
-                    line_ver = "".join(source_code_lines[start:end]).strip()
-                    first_stmt_is_inline = statement_code.strip() != line_ver
-                else:
-                    first_stmt_is_inline = False
-
-                if first_stmt_is_inline:
-                    statement_code = ast.get_source_segment(
-                        source_code, first_stmt
-                    )
-                    assert statement_code is not None
-                    lineno = first_stmt.lineno - 1
-                    target_line = new_source_code_lines[lineno]
-                    start = first_stmt.col_offset
-                    end = first_stmt.end_col_offset
-                    target_line = target_line[:start] + target_line[end:]
-                    new_source_code_lines[lineno] = target_line
-                    indented_statement_code = textwrap.indent(
-                        statement_code, next_indent
-                    )
-                    new_source_code_lines.insert(
-                        lineno + 1, indented_statement_code
-                    )
-                    insert_at_line += 1
 
                 new_source_code_lines.insert(
                     insert_at_line, indented_signature
@@ -283,8 +253,4 @@ def test_hint_hide_n_seek():
 
                     init_hint_unparsed = ast.unparse(hint)
                     found_hint_unparsed = ast.unparse(found_hint)
-                    # print(name, init_hint_unparsed, found_hint_unparsed)
                     assert found_hint_unparsed == init_hint_unparsed
-
-
-test_hint_hide_n_seek()
