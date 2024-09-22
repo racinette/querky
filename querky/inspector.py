@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import pathlib
 import ast
 import typing
@@ -42,15 +44,35 @@ DEFAULT_ENCODING = "utf-8"
 
 
 class ModuleInspector:
-    def __init__(self, source_code: str):
+    FILECACHE: dict[str, ModuleInspector] = dict()
+
+    def __init__(
+            self,
+            source_code: str,
+            lines: list[str],
+            module_ast: ast.Module
+    ):
         self.source_code = source_code
-        self.module_ast = ast.parse(source_code)
-        self.lines = source_code.splitlines(True)
+        self.lines = lines
+        self.module_ast = module_ast
 
     @classmethod
-    def from_file(cls, filepath: str, encoding: str = DEFAULT_ENCODING):
-        source_code = pathlib.Path(filepath).read_text(encoding)
-        return cls(source_code)
+    def from_file(cls, filepath: str):
+        source_code = pathlib.Path(filepath).read_text(DEFAULT_ENCODING)
+        return cls.from_source(source_code)
+
+    @classmethod
+    def cached_from_file(cls, filepath: str):
+        if filepath not in cls.FILECACHE:
+            val = cls.from_file(filepath)
+            cls.FILECACHE[filepath] = val
+        return cls.FILECACHE[filepath]
+
+    @classmethod
+    def from_source(cls, source_code: str):
+        module_ast = ast.parse(source_code)
+        lines = source_code.splitlines(True)
+        return cls(source_code, lines, module_ast)
 
     def get_func_header(self, fn: ast.FunctionDef):
         # находим начало
@@ -80,7 +102,6 @@ class ModuleInspector:
                 def_start_lineno + 1,
                 fst_lineno0
             )
-
 
     def _get_func_w_lineno_in_header(self, lineno0: int):
         return self._get_func_w_lineno_in_header_inner(

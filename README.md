@@ -83,6 +83,93 @@ command = "python3 querky generate --backend=asyncpg --datatype=pydantic_v2 sql"
 
 ```
 
+```python
+from .some_module import Bar
+
+
+def convert(c: Callable):
+	frame etc...
+	return c
+
+
+@convert
+def to_bar(x) -> Bar | None:
+	if x is None:
+		return None
+	return Bar(**x)
+
+
+class Foo(BaseModel):
+	__querky_metadata__ = QuerkyMetadata(
+		source=Postgres(version='14.1'),
+		fields={
+			"id": FieldMetadata(native_type='bigint'),
+			"bar": FieldMetadata(native_type='jsonb')
+		}
+	)
+
+	id: int
+	bar: Bar | None
+
+```
+
+
+```python
+# generative macros-like experience
+
+for field in ['username', 'id', 'phone', 'telegram_id', 'external_id']:
+	@qrk.query(f'get_user_by_{field}')
+	def query(arg: Annotated[MappedParam, Param(argname=field)]) -> Annotated[str, Return(typegroup='User')]:
+		return f"SELECT * FROM user WHERE {field} = {+arg}"
+
+
+for table, unique_fields in [
+	('user', ['username', 'id', 'phone', 'telegram_id', 'external_id']),
+	('home', ['id', 'address']),
+	('car', ['id', 'plate_number', 'serial_number']),
+	('receipt', ['id'])
+]:
+	for unique_field in unique_fields:
+		@qrk.query(f"get_{table}_by_{unique_field}")
+		def query(arg: Annotated[MappedParam, Param(name=field)]) -> Annotated[str, Return(group=table)]:
+			return f"SELECT * FROM {table} WHERE {field} = {+arg}"
+
+
+
+def transform(i: T) -> Wrapped[T]:
+	return Wrapped(t=t)
+
+
+def create_transformer(Type: type) -> typing.Callable[[typing.Any], Wrapped[Type]]:  # type: ignore
+	def transform(i: typing.Any) -> Wrapped[Type]:  # type: ignore
+		val = t(i)
+		return Wrapped(t=val)
+
+
+for t in [Type1, Type2, Type3]:
+	transform = create_transform(t)
+
+	@qrk.query(f"get_config_{t.__name__.lower()}")
+	def query(id) -> Annotated[str, Return(shape='value', tranform=transform)]:
+		return f"SELECT jsonb_val FROM kv_store WHERE id = {+id}"
+
+```
+
+
+1. Собираем hint и transform поля из Return и Param аннотаций. Для transform хотим забрать return annotation с fallback на `Return(hint=...)` с последующим fallback на `typing.Any`.
+2. Собираем все import statements из файла с запросом.
+3. Ищем, откуда были импортированы все имена из hint и trasform:
+    0. Прежде всего, нужно понять, объявлено ли имя внутри текущего модуля, или оно внешнее. Таким образом можно избежать сканирования. Это задача со звездочкой, ее нужно решать отдельно, но решать нужно обязательно. Это понадобится при решении проблемы ambiguous imports, когда один и тот же объект может быть импортирован из разных мест, а нам необходимо обязательно импортировать его из места, где он был объявлен.
+    1. Сначала пытаемся найти используемые имена среди импортов. Например, `hint=SomeClass | None`, и у нас есть `from some_module import SomeClass`.
+    2. Если не получилось, то пытаемся проделать то же самое, используя только импортированные модули и их подмодули. Например, `hint=LocalAlias | None`, а где-то в коде `from foo import Cls; LocalAlias = Cls`. Соответственно, пройдя все импортируемые модули, мы должны будем найти `Cls`.
+    3. Пробуем пройти все импортированные модули, КРОМЕ ТЕКУЩЕГО.
+    4. Пробуем найти в текущем модуле.
+    5. Не получилось найти -- выбрасываем ошибку.
+4. Теперь мы все знаем. Остается сгенерировать импорты для аннотаций, а сами аннотации перегенерировать с нуля, параллельно решая проблему name clashing на уровне генерируемого модуля.
+
+Решение задачи с множественными возможностями импорта одного и того же объекта:
+1.
+
 # Showcase
 
 This example shows what `querky` SQL functions look like.

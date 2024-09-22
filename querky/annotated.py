@@ -1,7 +1,5 @@
 import typing
-import inspect
 
-from querky.inspector import get_module_ast
 from querky.typing_hints import (
     NoValue,
     _NoValue,
@@ -14,6 +12,7 @@ from querky.typing_hints import (
     ResultShape,
     VectorShape,
 )
+from querky.inspect_helpers import get_inspect_info
 
 if typing.TYPE_CHECKING:
     from querky.query import Query
@@ -23,6 +22,8 @@ class Param:
     def __init__(
         self, hint: typing.Any | None = None, addons: typing.Any | None = None
     ):
+        # TODO:
+        self._info = get_inspect_info()
         self.hint = hint
         self.addons = addons
 
@@ -156,17 +157,7 @@ class Return:
         return s  # type: ignore
 
     def __init__(self, **kwargs):
-        frame = inspect.stack()[1][0]
-        caller = inspect.getframeinfo(frame)
-        lineno = caller.lineno
-        caller_file = inspect.getframeinfo(frame).filename
-
-        self.caller_file = caller_file
-        self.caller = caller
-        self.lineno = lineno
-        self.frame = frame
-        self.module_ast, self.module_source = get_module_ast(caller_file)
-
+        self._info = get_inspect_info(kwargs.get("_stack_level", 2))
         self._same_as: typing.Optional[Query] = kwargs.get("same_as")
         self._hint = kwargs.get("hint", _NoValue)
         self._shape = kwargs.get("shape")
@@ -248,8 +239,9 @@ class Return:
                 raise ValueError(f"wrong shape: {self._shape}")
 
         if not self._is_empty("_hint"):
-            # необходимо найти аннотацию в AST
-            pass
+            self._hint = self._info.inspector.get_return_annotation(
+                self._info.lineno0
+            )
 
     def annotate(self, query: Query) -> str:
         pass

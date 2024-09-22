@@ -242,7 +242,7 @@ def test_hint_hide_n_seek():
                 )
                 new_source_code = "".join(new_source_code_lines)
 
-                m = ModuleInspector(new_source_code)
+                m = ModuleInspector.from_source(new_source_code)
 
                 for name, hint in signature_hints.items():
                     hint_lineno0 = insert_at_line + hint.lineno + offset
